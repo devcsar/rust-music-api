@@ -1,47 +1,79 @@
-use reqwest::header::AUTHORIZATION;
+use reqwest;
 use serde::Deserialize;
-use std::error::Error;
+use std::env;
+use dotenv::dotenv;
 
-#[derive(Deserialize, Debug)]
-struct TopTracksResponse {
+#[derive(Debug, Deserialize)]
+struct SearchResponse {
+    tracks: Tracks,
+}
+
+#[derive(Debug, Deserialize)]
+struct Tracks {
     items: Vec<Track>,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Debug, Deserialize)]
 struct Track {
     name: String,
-    // Puedes agregar más campos, como "artists", "album", etc.
+    artists: Vec<Artist>,
+    album: Album,
+    duration_ms: u32,
+}
+
+#[derive(Debug, Deserialize)]
+struct Artist {
+    name: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct Album {
+    name: String,
+    release_date: String,
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn Error>> {
-    // Reemplaza con tu token de acceso válido de Spotify
-    let access_token = "BQCsTRbcWneXgl6H8ChZ0aSoib5pzcKVvKTZwQ3eRbd35FWQqWx8lpJa8CAvmbZVG2OxsvPNzSFJeEnD_EvZnAdeV2SFuIJT_6fCkTys5-SBcgufk3ieYb7FcCS1jvcPGrCgaHknSeA";
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Cargar las variables de entorno desde el archivo .env
+    dotenv().ok();
 
-    // Endpoint para obtener las canciones top del usuario, limitando la respuesta a 5 resultados
-    let url = "https://api.spotify.com/v1/me/top/tracks?limit=5";
+    // Obtener el token desde la variable de entorno "token"
+    let access_token = env::var("token")
+        .expect("Debes definir la variable de entorno 'token' en el archivo .env");
 
-    // Crea el cliente HTTP
+    // Crear cliente HTTP
     let client = reqwest::Client::new();
 
-    // Realiza la petición GET a la API de Spotify
-    let response = client
-        .get(url)
-        .header(AUTHORIZATION, format!("Bearer {}", access_token))
+    // Búsqueda de la canción "Darkstar" de Hans Zimmer
+    let query = "Darkstar Hans Zimmer";
+    let search_url = format!(
+        "https://api.spotify.com/v1/search?q={}&type=track&limit=1",
+        urlencoding::encode(query)
+    );
+
+    let search_response = client.get(&search_url)
+        .header("Authorization", format!("Bearer {}", access_token))
         .send()
+        .await?
+        .json::<SearchResponse>()
         .await?;
 
-    // Verifica si la petición fue exitosa
-    if response.status().is_success() {
-        let top_tracks: TopTracksResponse = response.json().await?;
-        println!("Tus 5 canciones principales:");
-        for (i, track) in top_tracks.items.iter().enumerate() {
-            println!("{}: {}", i + 1, track.name);
-        }
+    // Mostrar los datos de la canción si se encuentra algún resultado
+    if let Some(track) = search_response.tracks.items.first() {
+        println!("Datos de la canción encontrada:");
+        println!("Título  : {}", track.name);
+        let artist_names: Vec<String> = track.artists.iter().map(|a| a.name.clone()).collect();
+        println!("Artista : {}", artist_names.join(", "));
+        println!("Álbum  : {}", track.album.name);
+        println!("Fecha de lanzamiento: {}", track.album.release_date);
+        // Convertir la duración de milisegundos a minutos y segundos
+        let duration_sec = track.duration_ms / 1000;
+        let minutes = duration_sec / 60;
+        let seconds = duration_sec % 60;
+        println!("Duración: {}:{:02}", minutes, seconds);
     } else {
-        println!("Error en la consulta: {}", response.status());
+        println!("No se encontró la canción.");
     }
 
     Ok(())
 }
-
